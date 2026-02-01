@@ -156,10 +156,11 @@ export const syncCoinSetsOnce = async (): Promise<CoinSetUpdateResult[]> => {
         new Set(localSets?.[index]?.coins ?? []),
         new Set(newCoins),
       );
+
       localSets[index] = {
         blockHash: remoteMeta.blockHash,
         setHash: remoteMeta.setHash,
-        coins: Array.from(updatedCoinsSet),
+        coins: [...(localSets?.[index]?.coins ?? []), ...updatedCoinsSet],
       };
 
       if (!localSets[index] || isFullReplacement) {
@@ -189,7 +190,7 @@ export const syncCoinSetsOnce = async (): Promise<CoinSetUpdateResult[]> => {
 };
 
 export const startCoinSetSync = (options?: CoinSetSyncOptions) => {
-  const intervalMs = options?.intervalMs ?? 60_000;
+  const intervalMs = options?.intervalMs ?? 20_000;
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let isRunning = false;

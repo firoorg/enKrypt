@@ -110,17 +110,23 @@ export const useSynchronizeSparkState = (
 
       isPending.value = true;
 
-      startCoinSetSync({
+      const stopCoinSetSyncFn = startCoinSetSync({
         onComplete: () => {
           synchronizeWorker();
         },
+        onUpdate: () => {
+          console.log('%c[CoinSetSync] Update received', 'color: blue');
+          synchronizeWorker();
+        }
       });
 
-      startTagSetSync({
+      const stopSyncTagSetFn = startTagSetSync({
         onComplete: () => {
           tagFetchDone.value = true;
         },
       });
+
+      return { stopCoinSetSyncFn, stopSyncTagSetFn };
     } catch (err: any) {
       error.value = err;
       console.error('Syncing error:', err);
@@ -129,7 +135,23 @@ export const useSynchronizeSparkState = (
     }
   };
 
-  watch(() => networkRef.value.name, synchronize, { immediate: true });
+  watch(
+    () => networkRef.value.name,
+    async (_v, _ov, onCleanup) => {
+      const stopFns = await synchronize();
+
+      if (stopFns) {
+        const { stopSyncTagSetFn, stopCoinSetSyncFn } = stopFns
+
+        onCleanup(() => {
+          console.log("%c[Network Change] Stopping previous sync processes", 'color: orange');
+          stopCoinSetSyncFn();
+          stopSyncTagSetFn();
+        });
+      }
+    },
+    { immediate: true }
+  );
 
   watch(
     () => [coinFetchDone.value, tagFetchDone.value],
