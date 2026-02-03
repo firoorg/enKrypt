@@ -84,6 +84,10 @@ const fetchNewCoinsForSet = async (
 ): Promise<{ coins: string[][]; isFullReplacement: boolean }> => {
   const localCoinsCount = localSet?.coins?.length ?? 0;
 
+  console.log('===>>>localCoinsCount', localCoinsCount);
+
+  console.log('===>>>Meta for set', meta, localCoinsCount);
+
   if (!localSet || meta.size <= localCoinsCount + 1) {
     const [firstChunk, secondChunk] = await Promise.all([
       wallet.fetchAnonymitySetSector(
@@ -142,6 +146,8 @@ export const syncCoinSetsOnce = async (): Promise<CoinSetUpdateResult[]> => {
         }
       }
 
+      console.log('===>>>Local set', localSet);
+
       const { coins: newCoins, isFullReplacement } = await fetchNewCoinsForSet(
         setId,
         remoteMeta,
@@ -152,10 +158,15 @@ export const syncCoinSetsOnce = async (): Promise<CoinSetUpdateResult[]> => {
         return null;
       }
 
+      console.log('===>>>Local coins for set', localSets?.[index]?.coins);
+      console.log('===>>>New fetched coins for set', newCoins);
+
       const updatedCoinsSet = differenceSets(
         new Set(localSets?.[index]?.coins ?? []),
         new Set(newCoins),
       );
+
+      console.log('===>>>Updated coins for set', updatedCoinsSet);
 
       localSets[index] = {
         blockHash: remoteMeta.blockHash,
@@ -164,7 +175,7 @@ export const syncCoinSetsOnce = async (): Promise<CoinSetUpdateResult[]> => {
       };
 
       if (!localSets[index] || isFullReplacement) {
-        await db.saveData(DB_DATA_KEYS.sets, localSets);
+        await db.saveData(DB_DATA_KEYS.sets, localSets); // TODO: check
       } else {
         await db.appendSetData(DB_DATA_KEYS.sets, index, {
           ...localSets[index],
@@ -190,7 +201,7 @@ export const syncCoinSetsOnce = async (): Promise<CoinSetUpdateResult[]> => {
 };
 
 export const startCoinSetSync = (options?: CoinSetSyncOptions) => {
-  const intervalMs = options?.intervalMs ?? 20_000;
+  const intervalMs = options?.intervalMs ?? 60_000;
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let isRunning = false;

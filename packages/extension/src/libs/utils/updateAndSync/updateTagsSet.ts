@@ -34,7 +34,7 @@ const syncTagsOnce = async (): Promise<SetsUpdateResult> => {
     );
 
     const mergedTags = Array.from(
-      new Set([...(diffTags.values() ?? []), ...(updates?.tags ?? [])]),
+      new Set([...(localTags?.tags ?? []), ...(diffTags.values() ?? [])]),
     );
     await db.saveData(DB_DATA_KEYS.usedCoinsTags, {
       tags: mergedTags,

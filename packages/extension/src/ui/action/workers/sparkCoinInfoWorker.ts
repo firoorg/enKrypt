@@ -32,7 +32,7 @@ export interface OwnedCoinData {
   value: bigint;
 }
 
-const removeDuplicates = (coinsResult: Set<MyCoinModel>): Set<MyCoinModel> => {
+export const removeDuplicates = (coinsResult: Set<MyCoinModel>): Set<MyCoinModel> => {
   const arr = Array.from(coinsResult);
   const seen = new Set<string>();
   const deduped = [];
@@ -52,7 +52,8 @@ const removeDuplicates = (coinsResult: Set<MyCoinModel>): Set<MyCoinModel> => {
 
 async function fetchAllCoinInfos(
   myCoinsMap: Map<string, MyCoinModel>,
-  slicedSets: AnonymitySetModel[],
+  allSets: AnonymitySetModel[],
+  lastSetId: number,
   fullViewKeyObj: number,
   incomingViewKeyObj: number,
   Module: WasmModule,
@@ -60,6 +61,8 @@ async function fetchAllCoinInfos(
   try {
     const allPromises: Promise<any>[] = [];
     const finalResult: CheckedCoinData[] = [];
+
+    const slicedSets = allSets.slice(lastSetId);
 
     slicedSets.forEach((set, index) => {
       set.coins.forEach(coin => {
@@ -74,7 +77,7 @@ async function fetchAllCoinInfos(
           }).then(async res => {
             finalResult.push({
               coin: res,
-              setId: index + 1,
+              setId: lastSetId + index + 1,
               tag: res.tag,
               setHash: set.setHash,
             });
@@ -112,15 +115,19 @@ async function fetchAllCoinInfos(
       isUsed: false,
     }));
 
-    const savedMyCoins = (await db.readData<any[]>(DB_DATA_KEYS.myCoins)) || [];
-    const updatedMyCoinsSet = differenceSets(
-      new Set(savedMyCoins),
-      new Set(myCoins),
-    );
-    const dedupedMyCoinsSet = removeDuplicates(updatedMyCoinsSet);
+    const savedMyCoins =
+      (await db.readData<MyCoinModel[]>(DB_DATA_KEYS.myCoins)) || [];
+
+    console.log('===>>>Saved My Coins:', savedMyCoins);
+    console.log('===>>>My Calculated Spark Coins:', myCoins);
+
+    const dedupedMyCoinsSet = removeDuplicates(new Set([...savedMyCoins, ...myCoins]));
+
+    console.log('===>>>Deduped Spark Coins:', dedupedMyCoinsSet);
+
     await db.saveData(DB_DATA_KEYS.myCoins, Array.from(dedupedMyCoinsSet));
 
-    return Array.from(updatedMyCoinsSet);
+    return Array.from(new Set([...savedMyCoins, ...myCoins]));
   } catch (err) {
     console.error(err);
   }
@@ -160,7 +167,8 @@ addEventListener('message', async () => {
 
   const result = await fetchAllCoinInfos(
     myCoinsMap,
-    allSets.slice(Number(lastCheckedSetIndex)),
+    allSets,
+    Number(lastCheckedSetIndex),
     fullViewKeyObj,
     incomingViewKeyObj,
     Module,
