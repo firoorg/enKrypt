@@ -12,7 +12,7 @@ import {
   AnonymitySetModel,
   MyCoinModel,
 } from '@/providers/bitcoin/libs/electrum-client/abstract-electrum';
-import { differenceSets } from '@action/utils/set-utils';
+import { getSparkCoinAndSaveIntoDb } from '@/libs/spark-handler/getSparkCoinAndSaveIntoDb';
 
 const db = new IndexedDBHelper();
 
@@ -51,7 +51,6 @@ export const removeDuplicates = (coinsResult: Set<MyCoinModel>): Set<MyCoinModel
 };
 
 async function fetchAllCoinInfos(
-  myCoinsMap: Map<string, MyCoinModel>,
   allSets: AnonymitySetModel[],
   lastSetId: number,
   fullViewKeyObj: number,
@@ -59,75 +58,123 @@ async function fetchAllCoinInfos(
   Module: WasmModule,
 ) {
   try {
-    const allPromises: Promise<any>[] = [];
-    const finalResult: CheckedCoinData[] = [];
+    // const allPromises: Promise<any>[] = [];
+    // const finalResult: CheckedCoinData[] = [];
+
+    console.log('>>>>> lastSetId', lastSetId);
+    console.log('>>>>> allSets', allSets);
 
     const slicedSets = allSets.slice(lastSetId);
 
-    slicedSets.forEach((set, index) => {
-      set.coins.forEach(coin => {
-        const setCoin = `${coin.join()}${set.setHash}`;
+    const CONCURRENCY = 8;
 
-        if (!myCoinsMap.has(setCoin)) {
-          const promise = getSparkCoinInfo({
-            coin,
-            fullViewKeyObj,
-            incomingViewKeyObj,
-            wasmModule: Module,
-          }).then(async res => {
-            finalResult.push({
-              coin: res,
-              setId: lastSetId + index + 1,
-              tag: res.tag,
-              setHash: set.setHash,
-            });
-            // TODO: initially DB_DATA_KEYS.myCoins is undefined in loop , better to append one by one
-            // const oldCoins = await db.readData<MyCoinModel[]>(
-            //   DB_DATA_KEYS.myCoins,
-            // );
-            // console.log({ oldCoins });
-            // await db.saveData(DB_DATA_KEYS.myCoins, [
-            //   ...(oldCoins ?? []),
-            //   {
-            //     coin: res.originalCoin,
-            //     setId: index + 1,
-            //     setHash: set.setHash,
-            //     value: res.value,
-            //     tag: res.tag,
-            //     isUsed: false,
-            //   },
-            // ]);
-            return res;
-          });
+    const executing = new Set<Promise<void>>();
 
-          allPromises.push(promise);
+    for (const [index, set] of slicedSets.entries()) {
+      for (const coin of set.coins) {
+        const promise = getSparkCoinAndSaveIntoDb({
+          coin,
+          fullViewKeyObj,
+          incomingViewKeyObj,
+          wasmModule: Module,
+          set: {
+            id: lastSetId + index + 1,
+            hash: set.setHash,
+          },
+        });
+
+        executing.add(promise);
+
+        promise.finally(() => executing.delete(promise));
+
+        if (executing.size >= CONCURRENCY) {
+          await Promise.race(executing);
         }
-      });
-    });
+      }
+    }
 
-    await Promise.allSettled(allPromises);
-    const myCoins = finalResult.map(coinData => ({
-      coin: coinData.coin.originalCoin,
-      setId: coinData.setId,
-      value: coinData.coin.value,
-      tag: coinData.tag,
-      setHash: coinData.setHash,
-      isUsed: false,
-    }));
+    await Promise.allSettled(executing);
+
+    // const allPromises: Promise<any>[] = [];
+    //
+    // slicedSets.forEach((set, index) => {
+    //   set.coins.forEach(coin => {
+    //     const promise = getSparkCoinAndSaveIntoDb({
+    //       coin,
+    //       fullViewKeyObj,
+    //       incomingViewKeyObj,
+    //       wasmModule: Module,
+    //       set: {
+    //         id: lastSetId + index + 1,
+    //         hash: set.setHash,
+    //       },
+    //     });
+    //
+    //     allPromises.push(promise);
+    //
+    //     // const setCoin = `${coin.join()}${set.setHash}`;
+    //
+    //     // if (!myCoinsMap.has(setCoin)) {
+    //     //   const promise = getSparkCoinInfo({
+    //     //     coin,
+    //     //     fullViewKeyObj,
+    //     //     incomingViewKeyObj,
+    //     //     wasmModule: Module,
+    //     //   }).then(async res => {
+    //     //     finalResult.push({
+    //     //       coin: res,
+    //     //       setId: lastSetId + index + 1,
+    //     //       tag: res.tag,
+    //     //       setHash: set.setHash,
+    //     //     });
+    //     //     // TODO: initially DB_DATA_KEYS.myCoins is undefined in loop , better to append one by one
+    //     //     // const oldCoins = await db.readData<MyCoinModel[]>(
+    //     //     //   DB_DATA_KEYS.myCoins,
+    //     //     // );
+    //     //     // console.log({ oldCoins });
+    //     //     // await db.saveData(DB_DATA_KEYS.myCoins, [
+    //     //     //   ...(oldCoins ?? []),
+    //     //     //   {
+    //     //     //     coin: res.originalCoin,
+    //     //     //     setId: index + 1,
+    //     //     //     setHash: set.setHash,
+    //     //     //     value: res.value,
+    //     //     //     tag: res.tag,
+    //     //     //     isUsed: false,
+    //     //     //   },
+    //     //     // ]);
+    //     //     return res;
+    //     //   });
+    //     //
+    //     //   allPromises.push(promise);
+    //     // }
+    //   });
+    // });
+
+    // await Promise.allSettled(allPromises);
+    // const myCoins = finalResult.map(coinData => ({
+    //   coin: coinData.coin.originalCoin,
+    //   setId: coinData.setId,
+    //   value: coinData.coin.value,
+    //   tag: coinData.tag,
+    //   setHash: coinData.setHash,
+    //   isUsed: false,
+    // }));
 
     const savedMyCoins =
       (await db.readData<MyCoinModel[]>(DB_DATA_KEYS.myCoins)) || [];
 
     console.log('===>>>Saved My Coins:', savedMyCoins);
-    console.log('===>>>My Calculated Spark Coins:', myCoins);
+    // console.log('===>>>My Calculated Spark Coins:', myCoins);
 
-    const dedupedMyCoinsSet = removeDuplicates(new Set([...savedMyCoins, ...myCoins]));
+    // const dedupedMyCoinsSet = removeDuplicates(new Set([...savedMyCoins, ...myCoins]));
 
-    console.log('===>>>Deduped Spark Coins:', dedupedMyCoinsSet);
-
-    await db.saveData(DB_DATA_KEYS.myCoins, Array.from(dedupedMyCoinsSet));
-
-    return Array.from(new Set([...savedMyCoins, ...myCoins]));
+    // console.log('===>>>Deduped Spark Coins:', dedupedMyCoinsSet);
+    //
+    // await db.saveData(DB_DATA_KEYS.myCoins, Array.from(dedupedMyCoinsSet));
+    //
+    // return Array.from(new Set([...savedMyCoins, ...myCoins]));
+    return savedMyCoins;
   } catch (err) {
     console.error(err);
   }
@@ -155,18 +202,17 @@ addEventListener('message', async () => {
   }
 
   const allSets = await db.readData<AnonymitySetModel[]>(DB_DATA_KEYS.sets);
-  const myCoins = await db.readData<MyCoinModel[]>(DB_DATA_KEYS.myCoins);
+  // const myCoins = await db.readData<MyCoinModel[]>(DB_DATA_KEYS.myCoins);
 
-  const myCoinsMap = new Map<string, MyCoinModel>();
-  (myCoins ?? []).forEach(coin => {
-    myCoinsMap.set(`${coin.coin.join()}${coin.setHash}`, coin);
-  });
+  // const myCoinsMap = new Map<string, MyCoinModel>();
+  // (myCoins ?? []).forEach(coin => {
+  //   myCoinsMap.set(`${coin.coin.join()}${coin.setHash}`, coin);
+  // });
 
   const lastCheckedSetIndex =
     (await db.readData<string>(DB_DATA_KEYS.lastCheckedSetIndex)) ?? 0;
 
   const result = await fetchAllCoinInfos(
-    myCoinsMap,
     allSets,
     Number(lastCheckedSetIndex),
     fullViewKeyObj,

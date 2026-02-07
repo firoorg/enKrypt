@@ -4,7 +4,6 @@ import { differenceSets } from '@action/utils/set-utils';
 
 type SetsUpdateResult = {
   tags: string[];
-  // txHashes: string[];
 };
 
 export type TagsSyncOptions = {
@@ -19,32 +18,37 @@ const db = new IndexedDBHelper();
 
 const syncTagsOnce = async (): Promise<SetsUpdateResult> => {
   try {
-    const localTags = await db.readData<{ tags: string[] }>(
+    const localTags = await db.readData<{ tags: string[]; txHashes: string[][] }>(
       DB_DATA_KEYS.usedCoinsTags,
     );
 
     const txHashes = await wallet.getUsedCoinsTagsTxHashes(0);
-    const updates = await wallet.getUsedSparkCoinsTags(
-      !!localTags?.tags?.length ? localTags?.tags?.length : 0,
-    );
+    const updates = await wallet.getUsedSparkCoinsTags(0);
 
-    const diffTags = differenceSets(
-      new Set(localTags?.tags ?? []),
-      new Set(updates?.tags ?? []),
-    );
+    // const updatedTagsSet = new Set(updates?.tags || []);
+    //
+    // console.log('>>>>>> local coins tags', new Set(localTags.tags));
+    // console.log('>>>>>> updates coins tags', new Set(updates.tags));
 
-    const mergedTags = Array.from(
-      new Set([...(localTags?.tags ?? []), ...(diffTags.values() ?? [])]),
-    );
-    await db.saveData(DB_DATA_KEYS.usedCoinsTags, {
-      tags: mergedTags,
-      txHashes: txHashes.tagsandtxids,
-    });
+    // const mergedTags = Array.from(
+    //   new Set([...(localTags?.tags ?? []), ...updatedTagsSet.values()]),
+    // );
+
+    // console.log('>>>>>> mergedTags coins tags', mergedTags);
 
     // Prevent sending updates if there are no new tags
-    if (mergedTags.length === localTags?.tags?.length) {
+    if (
+      updates.tags.length === localTags?.tags?.length &&
+      txHashes.tagsandtxids.length === localTags?.txHashes?.length
+    ) {
       return { tags: [] };
     }
+
+    // console.log('>>>>>> mergedTags coins tags', mergedTags);
+    await db.saveData(DB_DATA_KEYS.usedCoinsTags, {
+      tags: updates.tags,
+      txHashes: txHashes.tagsandtxids,
+    });
 
     return updates;
   } catch (error) {
