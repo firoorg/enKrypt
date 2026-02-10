@@ -76,12 +76,10 @@ class API implements ProviderAPIInterface {
     const address = pubkey.length < 64 ? pubkey : this.getAddress(pubkey);
     return fetch(`${this.node}/insight-api-zcoin/addr/${address}/?noTxList=1`)
       .then(res => res.json())
-      .then(
-        (balance: { balanceSat: string }) => {
-          if ((balance as any).message) return '0';
-          return toBN(balance.balanceSat).toString();
-        },
-      )
+      .then((balance: { balanceSat: string }) => {
+        if ((balance as any).message) return '0';
+        return toBN(balance.balanceSat).toString();
+      })
       .catch(() => '0');
   }
 

@@ -1,26 +1,19 @@
 import BigNumber from 'bignumber.js';
-import { firoElectrum } from '@/providers/bitcoin/libs/electrum-client/electrum-client';
-import { UnspentTxOutputModel } from '@/providers/bitcoin/libs/electrum-client/abstract-electrum';
-import { ECPairInterface } from 'ecpair';
+import { HaskoinUnspentType } from '@/providers/bitcoin/types';
 
-type SpendableUtxo = Omit<UnspentTxOutputModel, 'raw'> & {
-  keyPair: ECPairInterface;
-};
 
-export const getTotalMintedAmount = async (spendableUtxos: SpendableUtxo[]) => {
+export const getTotalMintedAmount = async (spendableUtxos: HaskoinUnspentType[]) => {
   let inputAmount = 0;
   const psbtInputs = [];
 
   for (const utxo of spendableUtxos) {
-    const txRaw = await firoElectrum.getTxRaw(utxo.txid);
-
     psbtInputs.push({
       hash: utxo.txid,
-      index: utxo.vout,
-      nonWitnessUtxo: Buffer.from(txRaw, 'hex'),
+      index: utxo.index,
+      nonWitnessUtxo: Buffer.from(utxo.raw!, 'hex'),
     });
 
-    inputAmount += utxo.satoshis;
+    inputAmount += utxo.value;
   }
 
   return { inputAmountBn: new BigNumber(inputAmount), psbtInputs };

@@ -99,6 +99,51 @@ export class BaseFiroWallet {
     return bip39.mnemonicToSeedSync(secret);
   }
 
+  async getKeyPair(address: string) {
+    const address2Check = await this.getTransactionsAddresses();
+    const addressIndex = address2Check.indexOf(address);
+
+    if (addressIndex === -1) {
+      console.error(`🚨 Address does not exist in address2Check: ${address}`);
+      return null
+    }
+
+    const iterationsLimit = Math.floor(address2Check.length / 2);
+
+    const { secret } = await this.#storage.get(
+      configs.STORAGE_KEYS.FIRO_WALLET_SECRET,
+    );
+
+    const seed = bip39.mnemonicToSeedSync(secret!);
+    const root = bip32.fromSeed(seed, this.network);
+
+    const change = addressIndex >= iterationsLimit ? 1 : 0;
+    let index = 0;
+
+    Array.from({ length: addressIndex }).forEach((_, i) => {
+      if (i > iterationsLimit) {
+        index+=1
+      }
+    });
+
+    const dPath = `m/44'/136'/0'/${change}/${index}`;
+
+    const child = root.derivePath(dPath);
+    const keyPair = ECPair.fromPrivateKey(child.privateKey!, {
+      network: this.network,
+    });
+    const { address: derivedAddress } = bitcoin.payments.p2pkh({
+      pubkey: child.publicKey,
+      network: this.network,
+    });
+
+    if (address !== derivedAddress) {
+      return null
+    }
+
+    return keyPair;
+  }
+
   async getAddressKeyPairMapping(
     addresses: string[],
   ): Promise<Record<string, ECPairInterface>> {

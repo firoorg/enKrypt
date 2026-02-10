@@ -1,7 +1,7 @@
 import { validator } from '@/providers/bitcoin/libs/firo-wallet/base-firo-wallet';
 import BigNumber from 'bignumber.js';
 import * as bitcoin from 'bitcoinjs-lib';
-import { ECPairInterface } from 'ecpair';
+import { HaskoinUnspentType } from '@/providers/bitcoin/types';
 
 interface CreateTempTxArgs {
   network: bitcoin.networks.Network;
@@ -15,24 +15,15 @@ interface CreateTempTxArgs {
     index: number;
     nonWitnessUtxo: Buffer<ArrayBuffer>;
   }[];
-  spendableUtxos: {
-    keyPair: ECPairInterface;
-    address: string;
-    txid: string;
-    vout: number;
-    scriptPubKey: string;
-    amount: number;
-    satoshis: number;
-    confirmations: number;
-  }[];
-  addressKeyPairs: Record<string, any>;
+  utxos: HaskoinUnspentType[];
+  keyPair: Record<string, any>;
 }
 
 export const createTempTx = ({
   network,
   inputs,
-  spendableUtxos,
-  addressKeyPairs,
+  utxos,
+  keyPair,
   mintValueOutput,
   changeAmount,
 }: CreateTempTxArgs) => {
@@ -51,7 +42,7 @@ export const createTempTx = ({
   });
 
   if (changeAmount.gt(0)) {
-    const firstUtxoAddress = spendableUtxos[0].address;
+    const firstUtxoAddress = utxos[0].address;
 
     tx.addOutput({
       address: firstUtxoAddress!,
@@ -59,10 +50,7 @@ export const createTempTx = ({
     });
   }
 
-  for (let index = 0; index < spendableUtxos.length; index++) {
-    const utxo = spendableUtxos[index];
-    const keyPair = addressKeyPairs[utxo.address];
-
+  for (let index = 0; index < utxos.length; index++) {
     const Signer = {
       sign: (hash: Uint8Array) => {
         return Buffer.from(keyPair.sign(hash));

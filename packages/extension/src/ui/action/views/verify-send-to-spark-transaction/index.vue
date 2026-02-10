@@ -150,14 +150,17 @@ const sendAction = async () => {
       network: network.value.name,
     });
 
+    const activityState = new ActivityState();
     const wasmModule = await wasmInstance.getInstance();
+    const api = (await network.value.api()) as unknown as FiroAPI;
 
-    const address2Check = await wallet.getTransactionsAddresses();
+    const fromAddress = network.value.displayAddress(txData.fromAddress);
 
-    const { spendableUtxos, addressKeyPairs } =
-      await wallet.getSpendableUtxos(address2Check);
+    const utxos = await api.getUTXOs(fromAddress);
+    if (!utxos?.length) throw new Error('No UTXOs available!');
 
-    if (spendableUtxos.length === 0) throw new Error('No UTXOs available!');
+    const keyPair = await wallet.getKeyPair(fromAddress);
+    if (!keyPair) throw new Error('KeyPair does not exist!');
 
     const amountToSendBN = new BigNumber(txData.toToken.amount);
 
@@ -165,17 +168,16 @@ const sendAction = async () => {
       wasmModule,
       address: txData.toAddress,
       amount: amountToSendBN.toString(),
-      utxos: spendableUtxos.map(({ txid, vout }) => ({
+      utxos: utxos.map(({ txid, index }) => ({
         txHash: Buffer.from(txid),
-        vout,
+        vout: index,
         txHashLength: txid.length,
       })),
     });
 
     const psbt = new bitcoin.Psbt({ network: network.value.networkInfo });
 
-    const { inputAmountBn, psbtInputs } =
-      await getTotalMintedAmount(spendableUtxos);
+    const { inputAmountBn, psbtInputs } = await getTotalMintedAmount(utxos);
 
     // Calculate tx fee
     const tempTx = createTempTx({
@@ -183,8 +185,8 @@ const sendAction = async () => {
         .minus(amountToSendBN)
         .minus(new BigNumber(500)),
       network: network.value.networkInfo,
-      addressKeyPairs,
-      spendableUtxos,
+      keyPair,
+      utxos,
       mintValueOutput: [
         {
           script: Buffer.from(mintTxData?.[0]?.scriptPubKey ?? '', 'hex'),
@@ -212,7 +214,7 @@ const sendAction = async () => {
     const changeAmount = inputAmountBn.minus(amountToSendBN).minus(feeBn);
 
     if (changeAmount.gt(0)) {
-      const firstUtxoAddress = spendableUtxos[0].address;
+      const firstUtxoAddress = utxos[0].address;
 
       psbt.addOutput({
         address: firstUtxoAddress!,
@@ -220,10 +222,7 @@ const sendAction = async () => {
       });
     }
 
-    for (let index = 0; index < spendableUtxos.length; index++) {
-      const utxo = spendableUtxos[index];
-      const keyPair = addressKeyPairs[utxo.address];
-
+    utxos.forEach((_, index) => {
       const Signer = {
         sign: (hash: Uint8Array) => {
           return Buffer.from(keyPair.sign(hash));
@@ -232,7 +231,7 @@ const sendAction = async () => {
       } as unknown as bitcoin.Signer;
 
       psbt.signInput(index, Signer);
-    }
+    });
 
     if (!psbt.validateSignaturesOfAllInputs(validator)) {
       throw new Error('Error: Some inputs were not signed!');
@@ -241,7 +240,6 @@ const sendAction = async () => {
     psbt.finalizeAllInputs();
 
     const rawTx = psbt.extractTransaction().toHex();
-    console.log('Raw Mint Transaction:', rawTx);
 
     const txActivity: Activity = {
       from: network.value.displayAddress(txData.fromAddress),
@@ -261,10 +259,6 @@ const sendAction = async () => {
       value: txData.toToken.amount,
       transactionHash: '',
     };
-
-    const activityState = new ActivityState();
-
-    const api = (await network.value.api()) as unknown as FiroAPI;
 
     api
       .broadcastTx(rawTx)

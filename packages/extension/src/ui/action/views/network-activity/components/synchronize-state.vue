@@ -136,16 +136,24 @@ const anonymizeFunds = async () => {
   errorMsg.value = undefined;
   if (!props.sparkAccount) return;
 
+  const activityState = new ActivityState();
   const wasmModule = await wasmInstance.getInstance();
-  const address2Check = await wallet.getTransactionsAddresses();
+  const api = (await props.network.api()) as unknown as FiroAPI;
 
-  const { spendableUtxos, addressKeyPairs } =
-    await wallet.getSpendableUtxos(address2Check);
+  const fromAddress = props.network.displayAddress(
+    props.accountInfo.selectedAccount?.address ?? '',
+  );
 
-  if (spendableUtxos.length === 0) throw new Error('No UTXOs available!');
+  const utxos = await api.getUTXOs(fromAddress);
+  if (!utxos?.length) throw new Error('No UTXOs available!');
 
-  const amountToSend = spendableUtxos.reduce((a, c) => {
-    return (a += c.satoshis);
+  const keyPair = await wallet.getKeyPair(fromAddress);
+  if (!keyPair) throw new Error('KeyPair does not exist!');
+
+  if (utxos.length === 0) throw new Error('No UTXOs available!');
+
+  const amountToSend = utxos.reduce((a, c) => {
+    return (a += c.value);
   }, 0);
 
   const amountToSendBN = new BigNumber(amountToSend);
@@ -154,9 +162,9 @@ const anonymizeFunds = async () => {
     wasmModule,
     address: props.sparkAccount.defaultAddress,
     amount: amountToSendBN.toString(),
-    utxos: spendableUtxos.map(({ txid, vout }) => ({
+    utxos: utxos.map(({ txid, index }) => ({
       txHash: Buffer.from(txid),
-      vout,
+      vout: index,
       txHashLength: txid.length,
     })),
   });
@@ -164,13 +172,13 @@ const anonymizeFunds = async () => {
   const psbt = new bitcoin.Psbt({ network: props.network.networkInfo });
 
   const { inputAmountBn, psbtInputs } =
-    await getTotalMintedAmount(spendableUtxos);
+    await getTotalMintedAmount(utxos);
 
   const tempTx = createTempTx({
     changeAmount: inputAmountBn.minus(amountToSendBN).minus(new BigNumber(500)),
     network: props.network.networkInfo,
-    addressKeyPairs,
-    spendableUtxos,
+    keyPair,
+    utxos,
     mintValueOutput: [
       {
         script: Buffer.from(mintTxData?.[0]?.scriptPubKey ?? '', 'hex'),
@@ -194,7 +202,7 @@ const anonymizeFunds = async () => {
   const changeAmount = inputAmountBn.minus(amountToSendBN).minus(feeBn);
 
   if (changeAmount.gt(0)) {
-    const firstUtxoAddress = spendableUtxos[0].address;
+    const firstUtxoAddress = utxos[0].address;
     console.log(
       `🔹 Sending Change (${feeBn.toNumber() / 1e8} FIRO) to ${firstUtxoAddress}`,
     );
@@ -204,10 +212,7 @@ const anonymizeFunds = async () => {
     });
   }
 
-  for (let index = 0; index < spendableUtxos.length; index++) {
-    const utxo = spendableUtxos[index];
-    const keyPair = addressKeyPairs[utxo.address];
-
+  for (let index = 0; index < utxos.length; index++) {
     const Signer = {
       sign: (hash: Uint8Array) => {
         return Buffer.from(keyPair.sign(hash));
@@ -226,8 +231,6 @@ const anonymizeFunds = async () => {
 
   const rawTx = psbt.extractTransaction().toHex();
   console.log('Raw Mint Transaction:', rawTx);
-
-  const fromAddress = props.accountInfo.selectedAccount?.address ?? '';
 
   let tokenPrice = '0';
 
@@ -256,10 +259,6 @@ const anonymizeFunds = async () => {
     value: amountToSendBN.minus(feeBn).toString(),
     transactionHash: '',
   };
-
-  const activityState = new ActivityState();
-
-  const api = (await props.network.api()) as unknown as FiroAPI;
 
   api
     .broadcastTx(rawTx)
@@ -399,5 +398,4 @@ const anonymizeFunds = async () => {
     border: 1px solid @gray01;
   }
 }
-
 </style>
