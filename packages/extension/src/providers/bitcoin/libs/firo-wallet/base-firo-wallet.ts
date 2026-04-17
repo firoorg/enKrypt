@@ -260,7 +260,10 @@ export class BaseFiroWallet {
       return undefined;
     }
 
-    const sparkState = await getSparkState(currentIndex);
+    const sparkState = await getSparkState(
+      currentIndex,
+      isTestnet(this.network),
+    );
     return sparkState?.defaultAddress;
   }
 
