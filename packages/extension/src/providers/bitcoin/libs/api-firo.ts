@@ -13,7 +13,7 @@ class API implements ProviderAPIInterface {
   constructor(node: string, networkInfo: BitcoinNetworkInfo) {
     this.node = node;
     this.networkInfo = networkInfo;
-    this.#wallet = new BaseFiroWallet();
+    this.#wallet = new BaseFiroWallet(networkInfo);
   }
 
   public get api() {

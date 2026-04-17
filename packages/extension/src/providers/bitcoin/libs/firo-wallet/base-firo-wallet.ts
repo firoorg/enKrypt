@@ -7,6 +7,7 @@ import * as bip32 from 'bip32';
 import * as bip39 from 'bip39';
 import * as bitcoin from 'bitcoinjs-lib';
 import ECPairFactory, { ECPairInterface } from 'ecpair';
+import { BitcoinNetworkInfo } from '../../types';
 import { PaymentType } from '../../types/bitcoin-network';
 import {
   AnonymitySetMetaModel,
@@ -31,10 +32,15 @@ export const validator = (
 const EXTERNAL_INDEX = 0;
 const INTERNAL_INDEX = 1;
 
-export const SATOSHI = new BigNumber(100000000);
-export const FIRO_BASE_PATH = "m/44'/136'/0'/0";
+// BIP44 coin type for Firo mainnet. Testnet coins share the generic
+// coin type 1 per SLIP-0044.
+const FIRO_COIN_TYPE = 136;
+const TESTNET_COIN_TYPE = 1;
 
-const NETWORK = {
+export const SATOSHI = new BigNumber(100000000);
+export const FIRO_BASE_PATH = `m/44'/${FIRO_COIN_TYPE}'/0'/0`;
+
+const MAINNET_NETWORK: BitcoinNetworkInfo = {
   name: NetworkNames.Firo,
   messagePrefix: '\x18Zcoin Signed Message:\n',
   bech32: 'bc',
@@ -50,11 +56,15 @@ const NETWORK = {
   maxFeeRate: 5000 * 2,
 };
 
+const isTestnet = (networkInfo: BitcoinNetworkInfo): boolean =>
+  networkInfo.name === NetworkNames.FiroTest;
+
 export class BaseFiroWallet {
   #storage: Storage;
   secret: string | undefined = undefined;
   seed: string = '';
-  network = NETWORK;
+  network: BitcoinNetworkInfo;
+  coinType: number;
   balance: number = 0;
   private addresses2Check: string[] | null = null;
 
@@ -70,8 +80,12 @@ export class BaseFiroWallet {
   _node0: BIP32Interface | undefined = undefined;
   _node1: BIP32Interface | undefined = undefined;
 
-  constructor() {
+  constructor(networkInfo: BitcoinNetworkInfo = MAINNET_NETWORK) {
     this.#storage = new BrowserStorage(InternalStorageNamespace.firoWallet);
+    this.network = networkInfo;
+    this.coinType = isTestnet(networkInfo)
+      ? TESTNET_COIN_TYPE
+      : FIRO_COIN_TYPE;
   }
 
   async setSecret(secret: string): Promise<void> {
@@ -117,10 +131,10 @@ export class BaseFiroWallet {
 
       if (index >= iterationsLimit) {
         dd = 1;
-        dPath = `m/44'/136'/0'/${dd}/${idx}`;
+        dPath = `m/44'/${this.coinType}'/0'/${dd}/${idx}`;
         idx += 1;
       } else {
-        dPath = `m/44'/136'/0'/${dd}/${index}`;
+        dPath = `m/44'/${this.coinType}'/0'/${dd}/${index}`;
       }
 
       const child = root.derivePath(dPath);
@@ -216,7 +230,7 @@ export class BaseFiroWallet {
     const root = bip32.fromSeed(Buffer.from(seed, 'hex'), this.network);
     this._xPub = root
       .deriveHardened(44)
-      .deriveHardened(136)
+      .deriveHardened(this.coinType)
       .deriveHardened(0)
       .neutered()
       .toBase58();
