@@ -3,7 +3,7 @@ import { BlockscoutNFTItem } from '@/libs/nft-handlers/types/blockscout';
 import { NodeType } from '@/types/provider';
 import Networks from '@/providers/ethereum/networks';
 import cacheFetch from '../cache-fetch';
-import { ethers, Contract } from 'ethers';
+import { JsonRpcProvider, Contract } from 'ethers';
 const ROOTSTOCK_RPC_NODE = 'https://public-node.rsk.co';
 const ERC721_METADATA_ABI = [
   'function contractURI() view returns (string)'
@@ -24,7 +24,7 @@ const fetchNftCollectionDescription = async (network: NodeType, contractAddress:
     if (!supportedNetworks.includes(network.name)) {
       return null;
     }
-    const provider = new ethers.providers.JsonRpcProvider(ROOTSTOCK_RPC_NODE);
+    const provider = new JsonRpcProvider(ROOTSTOCK_RPC_NODE);
     const contract = new Contract(contractAddress.toLowerCase(), ERC721_METADATA_ABI, provider);
     const uri = await contract.contractURI();
     const httpUrl = getAssetURL(uri);
