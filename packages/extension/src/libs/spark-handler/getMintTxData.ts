@@ -26,6 +26,14 @@ export const getMintTxData = async ({
     return;
   }
 
+  // BigInt() throws SyntaxError on non-numeric input. Validate up
+  // front so the caller gets an actionable message.
+  if (typeof amount !== 'string' || !/^\d+$/.test(amount)) {
+    throw new Error(
+      `getMintTxData: amount must be a non-empty integer string, got ${JSON.stringify(amount)}`,
+    );
+  }
+
   const getPointerHex = (pointer: number, byteLength = 64) => {
     if (!pointer) {
       return null;
