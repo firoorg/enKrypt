@@ -20,14 +20,20 @@ import { getSparkState } from '@/libs/spark-handler/generateSparkWallet';
 import BrowserStorage from '@/libs/common/browser-storage';
 import { InternalStorageNamespace } from '@/types/provider';
 
-// Initialize ECPair
-const ECPair = ECPairFactory(ecc);
+// ECPairFactory(ecc) runs testEcc(ecc) eagerly, which fails under
+// jsdom's Buffer polyfill. Lazy-init so the cost (and the check)
+// only happens when signing/verifying is actually exercised.
+let _ECPair: ReturnType<typeof ECPairFactory> | undefined;
+const getECPair = (): ReturnType<typeof ECPairFactory> => {
+  if (!_ECPair) _ECPair = ECPairFactory(ecc);
+  return _ECPair;
+};
 
 export const validator = (
   pubkey: Buffer,
   msghash: Buffer,
   signature: Buffer,
-): boolean => ECPair.fromPublicKey(pubkey).verify(msghash, signature);
+): boolean => getECPair().fromPublicKey(pubkey).verify(msghash, signature);
 
 const EXTERNAL_INDEX = 0;
 const INTERNAL_INDEX = 1;
@@ -120,6 +126,7 @@ export class BaseFiroWallet {
 
     const seed = bip39.mnemonicToSeedSync(secret!);
     const root = bip32.fromSeed(seed, this.network);
+    const ECPair = getECPair();
 
     let dd = 0;
     let idx = 0;
