@@ -19,8 +19,6 @@ import { getSparkState } from '@/libs/spark-handler/generateSparkWallet';
 import BrowserStorage from '@/libs/common/browser-storage';
 import { InternalStorageNamespace } from '@/types/provider';
 
-bitcoin.initEccLib(ecc);
-
 // Initialize ECPair
 const ECPair = ECPairFactory(ecc);
 
